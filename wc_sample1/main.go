@@ -67,6 +67,7 @@ func main() {
 		MaxCompactionConcurrency: 2,
 		CompactionCooldownPeriod: 3 * time.Second,
 		STDOutLogging:            true,
+		RecoverUncommittedTxns:   true,
 	}
 
 	db, err := wildcat.Open(opts)
