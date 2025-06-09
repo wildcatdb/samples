@@ -2,7 +2,7 @@
 GO lang
 
 ### Wildcat Version
-v2.1.2
+v2.1.3
 
 ### Explaination
 A sample program in which demonstrates Wildcat's transactional API functionalities, concurrency, and durability in a layout in which reflects an e-commerce type system.
