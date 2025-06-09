@@ -7,6 +7,8 @@ If you have a sample program in GO or in C using interop feel free to create a P
 - Explaination of the sample program
 - Version of Wildcat used
 
-**Directories should use prefix wc_sample followed by monotonically increasing numbers (wc_sample1, wc_sample2, wc_sample3, etc.)**
+
+> [!NOTE]
+> Directories should use prefix wc_sample followed by monotonically increasing numbers (wc_sample1, wc_sample2, wc_sample3, etc.)
 
 All samples are licensed under `MIT` license.
