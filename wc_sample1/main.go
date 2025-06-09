@@ -24,7 +24,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -53,63 +52,95 @@ type Customer struct {
 func main() {
 	// Change to a suitable directory for your environment as this
 	// sample is written for Linux environments mainly.
-	dbDir := "/tmp/wildcat_ecommerce_example"
+	dbDir := "/tmp/wc_sample1"
 
 	_ = os.RemoveAll(dbDir)
 
 	opts := &wildcat.Options{
-		Directory:                dbDir,
-		WriteBufferSize:          32 * 1024 * 1024,
-		SyncOption:               wildcat.SyncPartial,
-		SyncInterval:             100 * time.Nanosecond,
-		BloomFilter:              true,
-		BloomFilterFPR:           0.01,
-		MaxCompactionConcurrency: 2,
-		CompactionCooldownPeriod: 3 * time.Second,
-		STDOutLogging:            true,
-		RecoverUncommittedTxns:   true,
+		Directory:              dbDir,
+		STDOutLogging:          true,
+		RecoverUncommittedTxns: true,
 	}
 
 	db, err := wildcat.Open(opts)
 	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
+		fmt.Printf("Failed to open database: %v\n", err)
+		os.Exit(1)
 	}
 	defer func(db *wildcat.DB) {
 		_ = db.Close()
 	}(db)
 
-	fmt.Println("Wildcat Basic E-Commerce Sample")
+	fmt.Println("Wildcat Basic E-Commerce Sample. Demonstrates Wildcat's API, concurrency, and durability capabilities.")
+
+	fmt.Println("\nTransaction Recovery")
+	err = demonstrateTransactionRecovery(&db, opts)
+	if err != nil {
+		fmt.Printf("Error during transaction recovery: %v\n", err)
+		os.Exit(1)
+	} else {
+		fmt.Println("Transaction recovery completed successfully")
+		fmt.Println()
+
+	}
 
 	fmt.Println("\nBasic CRUD Operations")
-	demonstrateBasicOperations(db)
+	err = demonstrateBasicOperations(db)
+	if err != nil {
+		fmt.Printf("Error during basic operations: %v\n", err)
+		os.Exit(1)
+	} else {
+		fmt.Println("Basic CRUD operations completed successfully")
+		fmt.Println()
+
+	}
 
 	fmt.Println("\nConcurrent MVCC Transactions")
-	demonstrateConcurrentTransactions(db)
+	err = demonstrateConcurrentTransactions(db)
+	if err != nil {
+		fmt.Printf("Error during concurrent transactions: %v\n", err)
+		os.Exit(1)
+	} else {
+		fmt.Println("Concurrent transactions demonstration completed successfully")
+		fmt.Println()
+	}
 
 	fmt.Println("\nIterator Types (Full, Range, Prefix)")
-	demonstrateIterators(db)
+	err = demonstrateIterators(db)
+	if err != nil {
+		fmt.Printf("Error during iterator demonstration: %v\n", err)
+		os.Exit(1)
+	} else {
+		fmt.Println("Iterator demonstration completed successfully")
+		fmt.Println()
+	}
 
 	fmt.Println("\nBatch Operations")
-	demonstrateBatchOperations(db)
+	err = demonstrateBatchOperations(db)
+	if err != nil {
+		fmt.Printf("Error during batch operations: %v\n", err)
+		os.Exit(1)
+	} else {
+		fmt.Println("Batch operations completed successfully")
+		fmt.Println()
 
-	fmt.Println("\nExample 5: Transaction Recovery")
-	demonstrateTransactionRecovery(db, opts)
+	}
 
-	fmt.Println("\nExample 6: Database Statistics")
+	fmt.Println("\nDatabase Statistics")
 	stats := db.Stats()
 	fmt.Println(stats)
 
-	fmt.Println("\nAll examples completed successfully!")
+	fmt.Println("\nAll examples/demonstrations completed successfully!")
 }
 
-func demonstrateBasicOperations(db *wildcat.DB) {
+func demonstrateBasicOperations(db *wildcat.DB) error {
 	customers := []Customer{
 		{ID: "cust_001", Name: "Alice Johnson", Email: "alice@example.com"},
 		{ID: "cust_002", Name: "Bob Smith", Email: "bob@example.com"},
 		{ID: "cust_003", Name: "Carol Davis", Email: "carol@example.com"},
 	}
 
-	// Store customers using Update (auto-managed transactions)
+	// Store customers using Update (auto-managed transactions; no need to begin/commit manually)
 	for _, customer := range customers {
 		err := db.Update(func(txn *wildcat.Txn) error {
 			data, _ := json.Marshal(customer)
@@ -117,7 +148,7 @@ func demonstrateBasicOperations(db *wildcat.DB) {
 			return txn.Put([]byte(key), data)
 		})
 		if err != nil {
-			log.Printf("Failed to store customer %s: %v", customer.ID, err)
+			return fmt.Errorf("failed to store customer %s: %v", customer.ID, err)
 		}
 	}
 
@@ -132,7 +163,7 @@ func demonstrateBasicOperations(db *wildcat.DB) {
 	})
 
 	if err != nil {
-		log.Printf("Failed to retrieve customer: %v", err)
+		return fmt.Errorf("failed to retrieve customer: %v", err)
 	} else {
 		fmt.Printf("Retrieved customer: %s (%s)\n", retrievedCustomer.Name, retrievedCustomer.Email)
 	}
@@ -155,15 +186,45 @@ func demonstrateBasicOperations(db *wildcat.DB) {
 
 		return txn.Put([]byte("customer:cust_001"), updatedData)
 	})
-
 	if err != nil {
-		log.Printf("Failed to update customer: %v", err)
+		return fmt.Errorf("failed to update customer email: %v", err)
 	} else {
 		fmt.Println("Customer email updated successfully")
 	}
+
+	// Delete a customer
+	err = db.Update(func(txn *wildcat.Txn) error {
+		if err := txn.Delete([]byte("customer:cust_003")); err != nil {
+			return fmt.Errorf("failed to delete customer: %v", err)
+		}
+		return nil
+
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete customer: %v", err)
+	} else {
+		fmt.Println("Customer cust_003 deleted successfully")
+	}
+
+	// Verify deletion
+	err = db.View(func(txn *wildcat.Txn) error {
+		if _, err := txn.Get([]byte("customer:cust_003")); err == nil {
+			return fmt.Errorf("customer cust_003 still exists after deletion")
+		}
+		fmt.Println("Verified: customer cust_003 does not exist")
+		return nil
+
+	})
+	if err != nil {
+		return fmt.Errorf("verification failed: %v", err)
+	} else {
+		fmt.Println("Deletion verification successful")
+	}
+
+	return nil
 }
 
-func demonstrateConcurrentTransactions(db *wildcat.DB) {
+func demonstrateConcurrentTransactions(db *wildcat.DB) error {
 	var wg sync.WaitGroup
 	orderCount := 10
 
@@ -177,7 +238,7 @@ func demonstrateConcurrentTransactions(db *wildcat.DB) {
 			// Create order with manual transaction management
 			txn, err := db.Begin()
 			if err != nil {
-				log.Printf("Failed to begin transaction for order %d: %v", orderNum, err)
+				fmt.Printf("Failed to begin transaction for order %d: %v\n", orderNum, err)
 				return
 			}
 
@@ -196,22 +257,22 @@ func demonstrateConcurrentTransactions(db *wildcat.DB) {
 
 			// Put order
 			if err := txn.Put([]byte(orderKey), orderData); err != nil {
-				txn.Rollback()
-				log.Printf("Failed to put order %d: %v", orderNum, err)
+				_ = txn.Rollback()
+				fmt.Printf("Failed to put order %d: %v\n", orderNum, err)
 				return
 			}
 
 			// Create an index entry for customer orders
 			customerOrderKey := fmt.Sprintf("customer_orders:%s:%s", order.CustomerID, order.ID)
 			if err := txn.Put([]byte(customerOrderKey), []byte(order.ID)); err != nil {
-				txn.Rollback()
-				log.Printf("Failed to create customer index for order %d: %v", orderNum, err)
+				_ = txn.Rollback()
+				fmt.Printf("Failed to create customer index for order %d: %v\n", orderNum, err)
 				return
 			}
 
 			// Commit transaction
 			if err := txn.Commit(); err != nil {
-				log.Printf("Failed to commit order %d: %v", orderNum, err)
+				fmt.Printf("Failed to commit order %d: %v\n", orderNum, err)
 				return
 			}
 
@@ -220,11 +281,31 @@ func demonstrateConcurrentTransactions(db *wildcat.DB) {
 	}
 
 	wg.Wait()
+
+	// Verify all orders were processed
+	err := db.View(func(txn *wildcat.Txn) error {
+		for i := 0; i < orderCount; i++ {
+			orderKey := fmt.Sprintf("order:order_%03d", i)
+			if _, err := txn.Get([]byte(orderKey)); err != nil {
+				return fmt.Errorf("order %d not found: %v", i, err)
+			}
+		}
+		return nil
+
+	})
+	if err != nil {
+		fmt.Printf("Error verifying orders: %v\n", err)
+		return err
+
+	}
+
 	fmt.Printf("All %d orders processed concurrently!\n", orderCount)
+
+	return nil
 }
 
-func demonstrateIterators(db *wildcat.DB) {
-	fmt.Println("1. Full Iterator (all keys in ascending order):")
+func demonstrateIterators(db *wildcat.DB) error {
+	fmt.Println("Full Iterator (all keys in ascending order):")
 
 	err := db.View(func(txn *wildcat.Txn) error {
 		iter, err := txn.NewIterator(true) // ascending
@@ -249,10 +330,10 @@ func demonstrateIterators(db *wildcat.DB) {
 	})
 
 	if err != nil {
-		log.Printf("Full iterator error: %v", err)
+		return fmt.Errorf("full iterator error: %v", err)
 	}
 
-	fmt.Println("\n2. Range Iterator (customer keys only):")
+	fmt.Println("\nRange Iterator (customer keys only):")
 
 	err = db.View(func(txn *wildcat.Txn) error {
 		// Range from "customer:" to "customer;" (next ASCII char after ':')
@@ -274,12 +355,11 @@ func demonstrateIterators(db *wildcat.DB) {
 		}
 		return nil
 	})
-
 	if err != nil {
-		log.Printf("Range iterator error: %v", err)
+		fmt.Printf("Range iterator error: %v\n", err)
 	}
 
-	fmt.Println("\n3. Prefix Iterator (customer_orders for cust_001):")
+	fmt.Println("\nPrefix Iterator (customer_orders for cust_001):")
 
 	err = db.View(func(txn *wildcat.Txn) error {
 		iter, err := txn.NewPrefixIterator([]byte("customer_orders:cust_001:"), true)
@@ -297,12 +377,11 @@ func demonstrateIterators(db *wildcat.DB) {
 		}
 		return nil
 	})
-
 	if err != nil {
-		log.Printf("Prefix iterator error: %v", err)
+		fmt.Printf("Prefix iterator error: %v\n", err)
 	}
 
-	fmt.Println("\n4. Bidirectional Iterator (reverse through orders):")
+	fmt.Println("\nBidirectional Iterator (reverse through orders):")
 
 	err = db.View(func(txn *wildcat.Txn) error {
 		iter, err := txn.NewPrefixIterator([]byte("order:"), false) // descending
@@ -328,13 +407,14 @@ func demonstrateIterators(db *wildcat.DB) {
 		}
 		return nil
 	})
-
 	if err != nil {
-		log.Printf("Bidirectional iterator error: %v", err)
+		return fmt.Errorf("bidirectional iterator error: %v", err)
 	}
+
+	return nil
 }
 
-func demonstrateBatchOperations(db *wildcat.DB) {
+func demonstrateBatchOperations(db *wildcat.DB) error {
 	batchSize := 100
 	fmt.Printf("Inserting %d products in batch...\n", batchSize)
 
@@ -366,7 +446,7 @@ func demonstrateBatchOperations(db *wildcat.DB) {
 	duration := time.Since(start)
 
 	if err != nil {
-		log.Printf("Batch operation failed: %v", err)
+		return fmt.Errorf("batch insert failed: %v", err)
 	} else {
 		fmt.Printf("✓ Batch insert completed in %v (%.2f ops/sec)\n",
 			duration, float64(batchSize)/duration.Seconds())
@@ -375,23 +455,23 @@ func demonstrateBatchOperations(db *wildcat.DB) {
 	// Force flush to see memtable behavior
 	fmt.Println("Forcing flush to convert memtable to SSTables...")
 	if err := db.ForceFlush(); err != nil {
-		log.Printf("Force flush failed: %v", err)
+		fmt.Printf("Force flush failed: %v\n", err)
 	} else {
 		fmt.Println("✓ Flush completed")
 	}
+
+	return nil
 }
 
-func demonstrateTransactionRecovery(db *wildcat.DB, opts *wildcat.Options) {
+func demonstrateTransactionRecovery(db **wildcat.DB, opts *wildcat.Options) error {
 	fmt.Println("Creating an incomplete transaction for recovery demo...")
 
 	// Begin a transaction but don't commit it
-	txn, err := db.Begin()
+	txn, err := (*db).Begin()
 	if err != nil {
-		log.Printf("Failed to begin transaction: %v", err)
-		return
+		return fmt.Errorf("failed to begin transaction: %v", err)
 	}
 
-	// Add some data to the transaction
 	testData := map[string]string{
 		"recovery_test:key1": "value1",
 		"recovery_test:key2": "value2",
@@ -399,10 +479,9 @@ func demonstrateTransactionRecovery(db *wildcat.DB, opts *wildcat.Options) {
 	}
 
 	for key, value := range testData {
-		if err := txn.Put([]byte(key), []byte(value)); err != nil {
-			log.Printf("Failed to put %s: %v", key, err)
-			txn.Rollback()
-			return
+		if err = txn.Put([]byte(key), []byte(value)); err != nil {
+			_ = txn.Rollback()
+			return fmt.Errorf("failed to put %s: %v", key, err)
 		}
 	}
 
@@ -411,19 +490,18 @@ func demonstrateTransactionRecovery(db *wildcat.DB, opts *wildcat.Options) {
 	fmt.Printf("Created transaction ID: %d\n", txnID)
 
 	// We close and reopen the database to simulate a crash
-	_ = db.Close()
+	_ = (*db).Close()
 
 	// Reopen the database to simulate a crash recovery
-	db, err = wildcat.Open(opts)
+	*db, err = wildcat.Open(opts)
 	if err != nil {
-		log.Printf("Failed to reopen database: %v\n", err)
-		return
+		return fmt.Errorf("failed to reopen database: %v", err)
 	}
 
 	// Try to recover the transaction
-	recoveredTxn, err := db.GetTxn(txnID)
+	recoveredTxn, err := (*db).GetTxn(txnID)
 	if err != nil {
-		log.Printf("Failed to recover transaction %d: %v", txnID, err)
+		return fmt.Errorf("failed to recover transaction %d: %v", txnID, err)
 	} else {
 		fmt.Printf("✓ Recovered transaction %d\n", recoveredTxn.Id)
 		fmt.Printf("  Committed: %v\n", recoveredTxn.Committed)
@@ -431,16 +509,17 @@ func demonstrateTransactionRecovery(db *wildcat.DB, opts *wildcat.Options) {
 		fmt.Printf("  Delete set size: %d\n", len(recoveredTxn.DeleteSet))
 
 		// We can now decide to commit or rollback the recovered transaction
+		// In this case, we will commit it
 		fmt.Println("Committing recovered transaction...")
 		if err := recoveredTxn.Commit(); err != nil {
-			log.Printf("Failed to commit recovered transaction: %v", err)
+			return fmt.Errorf("failed to commit recovered transaction: %v", err)
 		} else {
 			fmt.Println("✓ Recovered transaction committed successfully")
 		}
 	}
 
 	// Verify the data is now available
-	err = db.View(func(viewTxn *wildcat.Txn) error {
+	err = (*db).View(func(viewTxn *wildcat.Txn) error {
 		for key := range testData {
 			if value, err := viewTxn.Get([]byte(key)); err != nil {
 				return fmt.Errorf("failed to get %s: %v", key, err)
@@ -450,8 +529,11 @@ func demonstrateTransactionRecovery(db *wildcat.DB, opts *wildcat.Options) {
 		}
 		return nil
 	})
-
 	if err != nil {
-		log.Printf("Verification failed: %v", err)
+		return fmt.Errorf("verification failed after recovery: %v", err)
 	}
+
+	fmt.Println("✓ All data verified after recovery")
+
+	return nil
 }
